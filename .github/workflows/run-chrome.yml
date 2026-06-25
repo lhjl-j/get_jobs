@@ -1,0 +1,35 @@
+name: Run Chrome
+
+concurrency:
+  group: run-chrome-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # daily at 02:00 UTC — 根据需要调整 cron
+    - cron: '0 2 * * *'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    env:
+      AI_API_KEY: ${{ secrets.ALI }}         # <- secret 名称为 ALI（你已指定）
+      AI_BASE_URL: ${{ vars.AI_BASE_URL }}   # <- 请在 Repo variables 中设置，或改为 secrets.AI_BASE_URL
+      AI_MODEL: ${{ vars.AI_MODEL }}         # <- 同上
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Install system dependencies required by Playwright/Chromium
+        run: |
