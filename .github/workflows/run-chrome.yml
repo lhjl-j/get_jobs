@@ -1,0 +1,57 @@
+  - name: Set up JDK 21
+    uses: actions/setup-java@v4
+    with:
+      java-version: '21'
+      distribution: 'temurin'
+      cache: gradle
+
+  - name: Check Chrome Version
+    run: google-chrome --version || true
+
+  - name: Grant execute permission for gradlew
+    run: chmod +x ./gradlew
+
+  - name: Build (Gradle)
+    run: ./gradlew clean bootJar -x test --no-daemon
+
+  - name: Start application (background)
+    run: |
+      set -euo pipefail
+      echo "[$(date)] Starting application..."
+      nohup java -jar build/libs/*-boot.jar > app-run.log 2>&1 &
+      APP_PID=$!
+      echo "app pid: $APP_PID"
+      HEALTH_OK=1
+      for i in $(seq 1 24); do
+        if curl -sSf http://localhost:8888/api/health >/dev/null 2>&1; then
+          echo "health OK (/api/health)"
+          HEALTH_OK=0
+          break
+        fi
+        if curl -sSf http://localhost:8888/actuator/health >/dev/null 2>&1; then
+          echo "health OK (/actuator/health)"
+          HEALTH_OK=0
+          break
+        fi
+        echo "Waiting for app to be ready... ($i/24)"
+        sleep 5
+      done
+      if [ "$HEALTH_OK" -ne 0 ]; then
+        echo "App failed to start within timeout. Dumping last 200 lines of log:"
+        tail -n 200 app-run.log || true
+        kill $APP_PID || true
+        exit 1
+      fi
+      echo "App is ready — running daily-run script (if present)"
+      if [ -x ./scripts/daily-run.sh ]; then
+        export API_BASE_URL="http://localhost:8888"
+        export PLATFORMS="boss,liepin,51job,zhilian"
+        ./scripts/daily-run.sh || echo "daily-run.sh exited with non-zero"
+      else
+        echo "scripts/daily-run.sh not found or not executable; skipping trigger step"
+      fi
+      echo "Stopping application (pid $APP_PID)"
+      kill $APP_PID || true
+      sleep 3
+      echo "=== app-run.log tail ==="
+      tail -n 200 app-run.log || true
